@@ -330,7 +330,7 @@ async def ahrefs_backlinks(
     filter with `where` rather than pulling everything and post-filtering.
     """
     return await _get(
-        "/site-explorer/backlinks",
+        "/site-explorer/all-backlinks",
         {
             "target": target, "select": select, "limit": limit,
             "order_by": order_by, "where": where, "mode": mode,
@@ -516,19 +516,34 @@ _ga_singleton = None
 
 
 def _ga_client():
-    """Lazily construct and cache the GA4 client."""
     global _ga_singleton
-    if _ga_singleton is None:
-        try:
-            from google.analytics.data_v1beta import BetaAnalyticsDataClient
-            _ga_singleton = BetaAnalyticsDataClient()
-        except Exception as e:
-            raise ValueError(
-                f"Could not initialise the GA4 client ({e}). Check that "
-                f"GOOGLE_APPLICATION_CREDENTIALS points to a valid service-account "
-                f"JSON file and that the Google Analytics Data API is enabled in "
-                f"that GCP project."
+    if _ga_singleton is not None:
+        return _ga_singleton
+
+    from google.analytics.data_v1beta import BetaAnalyticsDataClient
+
+    raw = os.environ.get("GA4_SA_JSON", "").strip()
+    try:
+        if raw:
+            from google.oauth2 import service_account
+            info = json.loads(raw)
+            creds = service_account.Credentials.from_service_account_info(
+                info,
+                scopes=["https://www.googleapis.com/auth/analytics.readonly"],
             )
+            _ga_singleton = BetaAnalyticsDataClient(credentials=creds)
+        else:
+            _ga_singleton = BetaAnalyticsDataClient()
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"GA4_SA_JSON is not valid JSON ({e}). Paste the ENTIRE key file contents, "
+            f"including the outer braces."
+        )
+    except Exception as e:
+        raise ValueError(
+            f"Could not initialise the GA4 client ({e}). Check GA4_SA_JSON, and confirm "
+            f"the Google Analytics Data API is enabled in that GCP project."
+        )
     return _ga_singleton
 
 
